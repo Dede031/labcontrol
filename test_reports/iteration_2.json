@@ -1,0 +1,32 @@
+{
+  "summary": "Iteração 2 do LabControl — testes de backend (15/15 pytest passando) e frontend (Solos com 4 abas, Concreto com Nota Fiscal, filtro vencidos com alerta vermelho, RBAC de validação). Todas as features listadas funcionam. Backend cobriu: séries auto S-001/S-002 sequenciais por obra, CPs S-XXX-A/B/C/D, rupturas com conforme=(res>=fck), RBAC 403 para laboratorista em /rupturas/{id}/validar, tecnico aprovando/rejeitando, filtro vencidos_only, Solos (amostras, PDL, Compactação com fit parabólico ~12% umidade ótima ~1.83 densidade máx, Hilf com GC calculado), PDF /api/relatorios/obra/{id} contém bytes válidos %PDF.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "URL de vencidos", "issue": "Enunciado da task menciona /cps?vencidos=1, mas a rota real no App.js é /corpos-de-prova?vencidos=1. /cps cai no wildcard e redireciona para /dashboard. Considerar adicionar alias/redirect ou padronizar. Comportamento correto na rota oficial: alerta vermelho, colunas Série e Nota fiscal aparecem, filtro aplicado.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "OPCIONAL: adicionar alias de rota /cps -> /corpos-de-prova (ou atualizar link no menu/PRD para bater com a rota real)",
+    "OPCIONAL (herdado da iter 1): warning React 'setState-in-render' e DialogDescription faltando em alguns modais"
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py está com ~1290 linhas — está no limite; considerar dividir em módulos (auth, obras, concreto, cps, ruptura, solos, relatorios) antes de escalar.",
+    "Cálculo de compactação em /api/solos/compactacao ignora energia (não afeta valores) — OK para V2 mas documentar.",
+    "server.py:1276-1287 usa @app.on_event('startup'/'shutdown') que está deprecated no FastAPI moderno — migrar para lifespan handler."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "~95% (rota /cps não existe, mas /corpos-de-prova?vencidos=1 funciona 100%)"},
+  "test_credentials": "super_admin: edesioalexandre13@gmail.com/admin123; tecnico: tecnico@labcontrol.com/tecnico123; laboratorista: laboratorista@labcontrol.com/lab123",
+  "seed_data_creation": "Criada obra TEST_Obra_Iter2 + 2 concretos (S-001, S-002) + 4 CPs S-001-A/B/C/D + 1 amostra TEST_AM-01 + ensaios PDL/Compactação/Hilf via pytest. A obra é deletada no teardown; ensaios órfãos podem ficar (deleção de obra não cascata solos).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Suíte pytest única em /app/backend/tests/backend_test.py. RODAR SEMPRE COM `-n 0` (o pytest.ini força xdist -n2 loadscope, e como as classes TestSeriesAuto e TestRupturaValidacao compartilham estado via pytest.<attr>, elas precisam do MESMO worker — solução foi rodar serial). O run parallel default falha por causa desse compartilhamento entre classes. Alternativa futura: converter os attrs em fixtures scope=module.",
+  "rca of the issue": "Rota /cps do enunciado não existe no frontend (App.js só tem /corpos-de-prova). Isso não é bug do E1 — pode ser typo do enunciado do problema. O comportamento funcional (querystring ?vencidos=1 → alerta vermelho + filtro backend) foi validado em /corpos-de-prova?vencidos=1 com screenshot."
+}
