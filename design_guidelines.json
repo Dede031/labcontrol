@@ -1,0 +1,127 @@
+{
+  "project_name": "LabControl",
+  "app_type": "saas_app",
+  "domain": "Civil Engineering & Structural Concrete/Soil Testing Laboratory Management",
+  "locale": "pt-BR",
+  "design_philosophy": {
+    "archetype": "Swiss & Technical Precision",
+    "tone": "Professional, authoritative, high-density, engineering-grade clarity",
+    "principles": [
+      "Data Density over Decorative Filler: Tables and grid metrics must prioritize scanability and precision",
+      "Strict Status Signal Hierarchy: Instant visual feedback with color-coded badges for compliance (Conforme, Ruptura Pendente, Em Dia, Calibração Próxima)",
+      "Frictionless Field & Lab Workflow: Fast input forms for concrete casting on site and rapid rupture calculation in lab",
+      "Multi-tenant & Responsive First: Isolated workspace experience with collapsible dark sidebar on desktop and bottom nav bar on mobile"
+    ]
+  },
+  "colors": {
+    "sidebar_bg": "#0f172a",
+    "sidebar_text": "#94a3b8",
+    "sidebar_active_bg": "#1e293b",
+    "sidebar_active_text": "#38bdf8",
+    "background_main": "#f8fafc",
+    "card_bg": "#ffffff",
+    "text_primary": "#0f172a",
+    "text_secondary": "#475569",
+    "text_muted": "#64748b",
+    "border_light": "#e2e8f0",
+    "kpi_cards": {
+      "obras_ativas": {
+        "bg": "#eff6ff",
+        "border": "#bfdbfe",
+        "icon_bg": "#3b82f6",
+        "text": "#1e40af"
+      },
+      "ensaios_realizados": {
+        "bg": "#f0fdf4",
+        "border": "#bbf7d0",
+        "icon_bg": "#22c55e",
+        "text": "#166534"
+      },
+      "cps_aguardando": {
+        "bg": "#fefce8",
+        "border": "#fef08a",
+        "icon_bg": "#eab308",
+        "text": "#854d0e"
+      },
+      "resultados_pendentes": {
+        "bg": "#fef2f2",
+        "border": "#fecaca",
+        "icon_bg": "#ef4444",
+        "text": "#991b1b"
+      },
+      "equipamentos_calibracao": {
+        "bg": "#faf5ff",
+        "border": "#e9d5ff",
+        "icon_bg": "#a855f7",
+        "text": "#6b21a8"
+      }
+    },
+    "status_badges": {
+      "ativa": { "bg": "#dcfce7", "text": "#15803d", "border": "#86efac" },
+      "concluida": { "bg": "#f1f5f9", "text": "#475569", "border": "#cbd5e1" },
+      "pendente": { "bg": "#fef9c3", "text": "#a16207", "border": "#fde047" },
+      "conforme": { "bg": "#dcfce7", "text": "#166534", "border": "#86efac" },
+      "nao_conforme": { "bg": "#fee2e2", "text": "#b91c1c", "border": "#fca5a5" },
+      "calibrado": { "bg": "#e0f2fe", "text": "#0369a1", "border": "#7dd3fc" },
+      "alerta": { "bg": "#ffedd5", "text": "#c2410c", "border": "#fdba74" }
+    }
+  },
+  "typography": {
+    "headings": "Outfit, system-ui, sans-serif",
+    "body": "Inter, system-ui, sans-serif",
+    "numbers_code": "JetBrains Mono, monospace",
+    "scale": {
+      "h1": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "h2": "text-xl sm:text-2xl font-semibold text-slate-900",
+      "h3": "text-lg font-semibold text-slate-800",
+      "body": "text-sm text-slate-600 leading-relaxed",
+      "caption": "text-xs text-slate-500",
+      "kpi_value": "text-2xl sm:text-3xl font-extrabold tracking-tight font-mono"
+    }
+  },
+  "layout_and_navigation": {
+    "desktop": {
+      "sidebar_width": "w-64",
+      "sidebar_collapsed": "w-20",
+      "header_height": "h-16",
+      "main_padding": "p-4 sm:p-6 lg:p-8"
+    },
+    "mobile": {
+      "bottom_nav": "fixed bottom-0 left-0 right-0 h-16 bg-slate-900 border-t border-slate-800 flex justify-around items-center z-50 text-slate-300"
+    },
+    "modules": [
+      { "id": "dashboard", "label": "Dashboard", "icon": "LayoutDashboard", "path": "/dashboard" },
+      { "id": "obras", "label": "Obras", "icon": "Building2", "path": "/obras" },
+      { "id": "concreto", "label": "Controle de Concreto", "icon": "Truck", "path": "/concreto" },
+      { "id": "cps", "label": "Corpos de Prova", "icon": "Cylinder", "path": "/corpos-de-prova" },
+      { "id": "ruptura", "label": "Ensaio de Ruptura", "icon": "Gauge", "path": "/ruptura" },
+      { "id": "equipamentos", "label": "Equipamentos", "icon": "Wrench", "path": "/equipamentos" },
+      { "id": "relatorios", "label": "Relatórios PDF", "icon": "FileSpreadsheet", "path": "/relatorios" },
+      { "id": "configuracoes", "label": "Configurações", "icon": "Settings", "path": "/configuracoes" }
+    ]
+  },
+  "key_workflows": {
+    "flow": "OBRA → CONCRETO → CORPOS DE PROVA → RUPTURA → RELATÓRIO PDF",
+    "ruptura_calculation": "Resistência (MPa) = Carga (kN) * 10 / Área (cm²). Exemplo: CP 10x20 cm -> Área = 78.54 cm². Carga 250 kN -> 31.83 MPa."
+  },
+  "image_urls": {
+    "login_hero": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwxfHxjb25zdHJ1Y3Rpb24lMjBzaXRlJTIwYnVpbGRpbmclMjBlbmdpbmVlcmluZ3xlbnwwfHx8fDE3OTAwNzI4NzV8MA&ixlib=rb-4.1.0&q=85",
+    "lab_work": "https://images.pexels.com/photos/38702583/pexels-photo-38702583.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "field_testing": "https://images.pexels.com/photos/31945566/pexels-photo-31945566.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "engineer_inspecting": "https://images.pexels.com/photos/8960943/pexels-photo-8960943.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+  },
+  "instructions_to_main_agent": [
+    "Implement full pt-BR professional terminology for civil engineering concrete lab management.",
+    "Use data-testid attribute on all interactive elements (buttons, inputs, tabs, modal triggers, table rows).",
+    "Ensure dark sidebar (#0f172a) on desktop and smooth transition to mobile bottom navigation.",
+    "Provide modal/dialog CRUD forms for Obras, Concreto, Corpos de Prova, Ruptura, Equipamentos.",
+    "Include automatic rupture strength calculation formula: MPa = (Carga kN * 10) / Area cm2.",
+    "Implement multi-tenant company switcher in top header and profile avatar dropdown.",
+    "Provide PDF report generation modal with preview layout including headers, lab logo, test summary table, and technical signatures."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Never use generic placeholder text; use realistic engineering data (e.g., FCK 30 MPa, Slump 120±20mm, Usina Concremix, Prensa Hidráulica Eletromecânica 2000 kN).",
+    "All form fields must have clear labels, units (MPa, kN, mm, cm², m³), and input validation feedback.",
+    "Keep contrast high and table layouts clean with hover effects and explicit action buttons (Visualizar, Editar, Excluir, Lançar Ruptura)."
+  ]
+}

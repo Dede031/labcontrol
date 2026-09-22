@@ -1,0 +1,47 @@
+.App {
+    min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Sidebar dark scrollbar */
+.sidebar-dark ::-webkit-scrollbar-thumb {
+    background: #334155;
+}
+.sidebar-dark ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+/* Fade-in animation for pages */
+.page-fade {
+    animation: fade-in 0.24s ease-out;
+}
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Numbers in tables */
+.tabular-nums {
+    font-variant-numeric: tabular-nums;
+}
