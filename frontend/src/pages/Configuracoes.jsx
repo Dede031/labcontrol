@@ -8,15 +8,24 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Building2 } from "lucide-react";
+import { Plus, Building2, Save, User } from "lucide-react";
 
 export default function Configuracoes() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [companies, setCompanies] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", cnpj: "", admin_email: "", admin_password: "", admin_name: "" });
 
+  const [profile, setProfile] = useState({ name: "", crea: "", telefone: "" });
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const isSuper = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (user) {
+      setProfile({ name: user.name || "", crea: user.crea || "", telefone: user.telefone || "" });
+    }
+  }, [user]);
 
   useEffect(() => {
     if (isSuper) api.get("/companies").then((r) => setCompanies(r.data)).catch(() => {});
@@ -33,20 +42,59 @@ export default function Configuracoes() {
     } catch (e) { toast.error(e.response?.data?.detail || "Erro"); }
   };
 
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      await api.patch("/auth/me", profile);
+      toast.success("Perfil atualizado — CREA aparecerá no PDF");
+      refresh();
+    } catch { toast.error("Erro ao salvar perfil"); }
+    finally { setSavingProfile(false); }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div>
         <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">Configurações</h1>
-        <p className="text-sm text-slate-500">Perfil e administração</p>
+        <p className="text-sm text-slate-500">Perfil, credenciais técnicas e administração</p>
       </div>
 
       <Card className="p-5">
-        <h3 className="font-display font-semibold mb-3">Meu perfil</h3>
-        <div className="grid sm:grid-cols-2 gap-4 text-sm">
-          <div><div className="text-slate-500 text-xs">Nome</div><div className="font-medium">{user?.name}</div></div>
-          <div><div className="text-slate-500 text-xs">E-mail</div><div className="font-medium">{user?.email}</div></div>
-          <div><div className="text-slate-500 text-xs">Perfil</div><div className="font-medium capitalize">{user?.role?.replace("_", " ")}</div></div>
-          <div><div className="text-slate-500 text-xs">Empresa</div><div className="font-medium">{user?.company_name || "-"}</div></div>
+        <div className="flex items-center gap-2 mb-4">
+          <User className="w-4 h-4 text-sky-600" />
+          <h3 className="font-display font-semibold">Meu perfil</h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">O CREA será exibido na linha de assinatura dos relatórios PDF gerados por você.</p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label>Nome completo</Label>
+            <Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="mt-1.5" />
+          </div>
+          <div>
+            <Label>E-mail</Label>
+            <Input value={user?.email || ""} readOnly className="mt-1.5 bg-slate-50" />
+          </div>
+          <div>
+            <Label>CREA / Registro profissional</Label>
+            <Input value={profile.crea} onChange={(e) => setProfile({ ...profile, crea: e.target.value })} placeholder="Ex: CREA-MG 123456/D" className="mt-1.5 font-mono" data-testid="profile-crea" />
+          </div>
+          <div>
+            <Label>Telefone</Label>
+            <Input value={profile.telefone} onChange={(e) => setProfile({ ...profile, telefone: e.target.value })} placeholder="(31) 99999-9999" className="mt-1.5" />
+          </div>
+          <div>
+            <Label>Perfil</Label>
+            <Input value={(user?.role || "").replace("_", " ")} readOnly className="mt-1.5 bg-slate-50 capitalize" />
+          </div>
+          <div>
+            <Label>Empresa</Label>
+            <Input value={user?.company_name || "-"} readOnly className="mt-1.5 bg-slate-50" />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button data-testid="profile-save-btn" onClick={saveProfile} disabled={savingProfile} className="bg-sky-600 hover:bg-sky-700">
+            <Save className="w-4 h-4 mr-2" /> {savingProfile ? "Salvando..." : "Salvar perfil"}
+          </Button>
         </div>
       </Card>
 

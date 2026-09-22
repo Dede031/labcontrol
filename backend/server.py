@@ -152,6 +152,12 @@ class CompanyIn(BaseModel):
     admin_name: str
 
 
+class UpdateProfileIn(BaseModel):
+    name: Optional[str] = None
+    crea: Optional[str] = None
+    telefone: Optional[str] = None
+
+
 class ObraIn(BaseModel):
     nome: str
     cliente: str
@@ -203,6 +209,10 @@ class SoloAmostraIn(BaseModel):
     profundidade: str = ""
     descricao: str = ""
     data_coleta: Optional[str] = None
+    coordenadas: str = ""       # Livre: lat/lng ou UTM
+    estaca: str = ""            # Ex: "E-25+3.50m"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     observacoes: str = ""
 
 
@@ -240,6 +250,35 @@ class HilfIn(BaseModel):
     densidade_max_lab: float  # g/cm³ (referência do Proctor)
     umidade_otima_lab: float  # %
     grau_compactacao_meta: float = 100.0  # %
+    observacoes: str = ""
+
+
+class PontoCBR(BaseModel):
+    penetracao_mm: float  # 0.63, 1.27, 1.90, 2.54, 3.17, 3.81, 4.44, 5.08, 7.62, 10.16, 12.7 mm
+    carga_kn: float
+
+
+class CBRIn(BaseModel):
+    amostra_id: str
+    data_ensaio: str
+    umidade_moldagem: float = 0
+    densidade_seca: float = 0
+    expansao_percent: float = 0
+    pontos: List[PontoCBR]
+    observacoes: str = ""
+
+
+class PontoGranulometria(BaseModel):
+    peneira_mm: float  # abertura da peneira em mm
+    peneira_nome: str = ""  # ex: "4", "10", "40", "200"
+    percent_passante: float  # 0-100
+
+
+class GranulometriaIn(BaseModel):
+    amostra_id: str
+    data_ensaio: str
+    peso_total: float = 0  # g
+    pontos: List[PontoGranulometria]
     observacoes: str = ""
 
 
@@ -283,6 +322,8 @@ async def login(payload: LoginIn, response: Response):
         "id": user["id"], "email": user["email"], "name": user["name"],
         "role": user["role"], "company_id": user.get("company_id"),
         "company_name": company_name,
+        "crea": user.get("crea", ""),
+        "telefone": user.get("telefone", ""),
         "access_token": access,
     }
 
@@ -304,7 +345,25 @@ async def me(user: dict = Depends(get_current_user)):
         "id": user["id"], "email": user["email"], "name": user["name"],
         "role": user["role"], "company_id": user.get("company_id"),
         "company_name": company_name,
+        "crea": user.get("crea", ""),
+        "telefone": user.get("telefone", ""),
     }
+
+
+@api.patch("/auth/me")
+async def update_me(payload: UpdateProfileIn, user: dict = Depends(get_current_user)):
+    upd = {}
+    if payload.name is not None:
+        upd["name"] = payload.name
+    if payload.crea is not None:
+        upd["crea"] = payload.crea
+    if payload.telefone is not None:
+        upd["telefone"] = payload.telefone
+    if not upd:
+        return await me(user)
+    await db.users.update_one({"id": user["id"]}, {"$set": upd})
+    updated = await db.users.find_one({"id": user["id"]}, {"password_hash": 0, "_id": 0})
+    return {"message": "Perfil atualizado", "user": updated}
 
 
 @api.post("/auth/forgot-password")
@@ -925,6 +984,170 @@ async def delete_hilf(e_id: str, user: dict = Depends(get_current_user)):
     return {"message": "Removido"}
 
 
+# --- CBR ---
+@api.get("/solos/cbr")
+async def list_cbr(amostra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if amostra_id:
+        f["amostra_id"] = amostra_id
+    items = await db.ensaios_cbr.find(f, {"_id": 0}).sort("data_ensaio", -1).to_list(500)
+    return items
+
+
+@api.post("/solos/cbr")
+async def create_cbr(payload: CBRIn, user: dict = Depends(get_current_user)):
+    amostra = await db.amostras_solo.find_one(tenant_filter(user, {"id": payload.amostra_id}))
+    if not amostra:
+        raise HTTPException(404, "Amostra não encontrada")
+    # Ordena por penetração
+    pts = sorted([p.model_dump() for p in payload.pontos], key=lambda p: p["penetracao_mm"])
+    # Calcular tensão (kgf/cm²) para pistão de 19.4 cm² (área padrão CBR ~ 3.24 in² = 20.9 cm²);
+    # Padrão brasileiro: pistão 4.96 cm² -> usar área padrão 19.35 cm² (2 pol²).
+    AREA_PISTAO_CM2 = 19.35
+    for p in pts:
+        # Tensão = carga(kN) * 1000 / area(cm²) -> N/cm² ; converter para kgf/cm² dividindo por 9.807
+        tensao_kgfcm2 = (p["carga_kn"] * 1000.0 / AREA_PISTAO_CM2) / 9.807
+        p["tensao_kgfcm2"] = round(tensao_kgfcm2, 3)
+    # CBR = tensão medida / tensão padrão * 100
+    # 2.54mm -> 70 kgf/cm² ; 5.08mm -> 105 kgf/cm²
+    def find_tensao(target):
+        for p in pts:
+            if abs(p["penetracao_mm"] - target) < 0.01:
+                return p["tensao_kgfcm2"]
+        # linear interp
+        below = [p for p in pts if p["penetracao_mm"] < target]
+        above = [p for p in pts if p["penetracao_mm"] > target]
+        if below and above:
+            a, b = below[-1], above[0]
+            return a["tensao_kgfcm2"] + (b["tensao_kgfcm2"] - a["tensao_kgfcm2"]) * (
+                (target - a["penetracao_mm"]) / (b["penetracao_mm"] - a["penetracao_mm"])
+            )
+        return None
+    t254 = find_tensao(2.54)
+    t508 = find_tensao(5.08)
+    cbr_254 = (t254 / 70.0) * 100 if t254 else None
+    cbr_508 = (t508 / 105.0) * 100 if t508 else None
+    cbr_final = None
+    if cbr_254 is not None and cbr_508 is not None:
+        cbr_final = round(max(cbr_254, cbr_508), 2)
+    elif cbr_254 is not None:
+        cbr_final = round(cbr_254, 2)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "amostra_id": payload.amostra_id,
+        "obra_id": amostra["obra_id"],
+        "obra_nome": amostra.get("obra_nome", ""),
+        "amostra_identificacao": amostra["identificacao"],
+        "data_ensaio": payload.data_ensaio,
+        "umidade_moldagem": payload.umidade_moldagem,
+        "densidade_seca": payload.densidade_seca,
+        "expansao_percent": payload.expansao_percent,
+        "pontos": pts,
+        "cbr_254": round(cbr_254, 2) if cbr_254 else None,
+        "cbr_508": round(cbr_508, 2) if cbr_508 else None,
+        "cbr_final": cbr_final,
+        "observacoes": payload.observacoes,
+        "created_at": iso(now_utc()),
+    }
+    await db.ensaios_cbr.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/cbr/{e_id}")
+async def delete_cbr(e_id: str, user: dict = Depends(get_current_user)):
+    r = await db.ensaios_cbr.delete_one(tenant_filter(user, {"id": e_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Não encontrado")
+    return {"message": "Removido"}
+
+
+# --- Granulometria ---
+@api.get("/solos/granulometria")
+async def list_granulometria(amostra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if amostra_id:
+        f["amostra_id"] = amostra_id
+    items = await db.ensaios_granulometria.find(f, {"_id": 0}).sort("data_ensaio", -1).to_list(500)
+    return items
+
+
+@api.post("/solos/granulometria")
+async def create_granulometria(payload: GranulometriaIn, user: dict = Depends(get_current_user)):
+    amostra = await db.amostras_solo.find_one(tenant_filter(user, {"id": payload.amostra_id}))
+    if not amostra:
+        raise HTTPException(404, "Amostra não encontrada")
+    pts = sorted([p.model_dump() for p in payload.pontos], key=lambda p: -p["peneira_mm"])
+    # Calcular D10, D30, D60 e coeficientes Cu (uniformidade) e Cc (curvatura)
+    def diametro_para_percent(pct_target):
+        # pts ordenados de maior peneira para menor. % passante geralmente diminui com peneira menor
+        # Encontrar dois pontos que cruzam o pct_target
+        sorted_asc = sorted(pts, key=lambda p: p["peneira_mm"])
+        for i in range(len(sorted_asc) - 1):
+            p1, p2 = sorted_asc[i], sorted_asc[i + 1]
+            if (p1["percent_passante"] - pct_target) * (p2["percent_passante"] - pct_target) <= 0:
+                # linear interp em log
+                import math
+                if p1["percent_passante"] == p2["percent_passante"]:
+                    return p1["peneira_mm"]
+                lp1 = math.log10(max(p1["peneira_mm"], 1e-6))
+                lp2 = math.log10(max(p2["peneira_mm"], 1e-6))
+                frac = (pct_target - p1["percent_passante"]) / (p2["percent_passante"] - p1["percent_passante"])
+                return round(10 ** (lp1 + frac * (lp2 - lp1)), 4)
+        return None
+    d10 = diametro_para_percent(10)
+    d30 = diametro_para_percent(30)
+    d60 = diametro_para_percent(60)
+    cu = round(d60 / d10, 2) if d10 and d60 else None
+    cc = round((d30 * d30) / (d10 * d60), 2) if d10 and d30 and d60 else None
+    # Frações (%) — pedregulho (>4.75mm), areia (0.075-4.75mm), finos (<0.075mm)
+    def pct_na_peneira(mm):
+        for p in pts:
+            if abs(p["peneira_mm"] - mm) < 1e-3:
+                return p["percent_passante"]
+        # interp
+        sorted_asc = sorted(pts, key=lambda p: p["peneira_mm"])
+        for i in range(len(sorted_asc) - 1):
+            p1, p2 = sorted_asc[i], sorted_asc[i + 1]
+            if p1["peneira_mm"] <= mm <= p2["peneira_mm"] and p2["peneira_mm"] != p1["peneira_mm"]:
+                return p1["percent_passante"] + (p2["percent_passante"] - p1["percent_passante"]) * \
+                    ((mm - p1["peneira_mm"]) / (p2["peneira_mm"] - p1["peneira_mm"]))
+        return None
+    pct_475 = pct_na_peneira(4.75)
+    pct_0075 = pct_na_peneira(0.075)
+    pedregulho = round(100 - pct_475, 2) if pct_475 is not None else None
+    finos = round(pct_0075, 2) if pct_0075 is not None else None
+    areia = round(100 - (pedregulho or 0) - (finos or 0), 2) if (pedregulho is not None and finos is not None) else None
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "amostra_id": payload.amostra_id,
+        "obra_id": amostra["obra_id"],
+        "obra_nome": amostra.get("obra_nome", ""),
+        "amostra_identificacao": amostra["identificacao"],
+        "data_ensaio": payload.data_ensaio,
+        "peso_total": payload.peso_total,
+        "pontos": pts,
+        "d10": d10, "d30": d30, "d60": d60,
+        "cu": cu, "cc": cc,
+        "pct_pedregulho": pedregulho,
+        "pct_areia": areia,
+        "pct_finos": finos,
+        "observacoes": payload.observacoes,
+        "created_at": iso(now_utc()),
+    }
+    await db.ensaios_granulometria.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/granulometria/{e_id}")
+async def delete_granulometria(e_id: str, user: dict = Depends(get_current_user)):
+    r = await db.ensaios_granulometria.delete_one(tenant_filter(user, {"id": e_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Não encontrado")
+    return {"message": "Removido"}
+
+
 # ---------------- DASHBOARD ----------------
 @api.get("/dashboard")
 async def dashboard(user: dict = Depends(get_current_user)):
@@ -1053,7 +1276,35 @@ async def relatorio_obra_pdf(obra_id: str, user: dict = Depends(get_current_user
         normal
     ))
     story.append(Spacer(1, 24))
-    story.append(Paragraph(f"_____________________________________<br/>Responsável Técnico<br/>{user.get('name','')}", normal))
+    # Bloco de assinaturas com CREA + data
+    signatures = []
+    tecnico_validador = None
+    # Buscar o último tecnico que validou alguma ruptura desta obra
+    for r in rupturas:
+        if r.get("validado_por"):
+            u = await db.users.find_one({"id": r["validado_por"]}, {"_id": 0, "password_hash": 0})
+            if u:
+                tecnico_validador = u
+                break
+    data_str = now_utc().strftime("%d/%m/%Y")
+    laborista_line = f"<b>{user.get('name','')}</b><br/>Responsável pelo ensaio<br/>{('CREA: ' + user.get('crea','')) if user.get('crea') else ''}<br/>Data: {data_str}"
+    if tecnico_validador and tecnico_validador.get("id") != user.get("id"):
+        tec_line = f"<b>{tecnico_validador.get('name','')}</b><br/>Técnico de Qualidade / Validador<br/>{('CREA: ' + tecnico_validador.get('crea','')) if tecnico_validador.get('crea') else ''}<br/>Data: {data_str}"
+        sig_table = Table([
+            ["_________________________", "_________________________"],
+            [Paragraph(laborista_line, normal), Paragraph(tec_line, normal)],
+        ], colWidths=[8.5*cm, 8.5*cm])
+        sig_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,1), (-1,1), 4),
+        ]))
+        story.append(sig_table)
+    else:
+        # Só o responsável (super_admin ou tecnico já é o gerador)
+        role_label = "Técnico Responsável" if user.get("role") in ("tecnico", "super_admin") else "Responsável pelo Ensaio"
+        crea_l = f"CREA: {user.get('crea','')}" if user.get('crea') else ""
+        story.append(Paragraph(f"_____________________________________<br/><b>{user.get('name','')}</b><br/>{role_label}<br/>{crea_l}<br/>Data: {data_str}", normal))
 
     doc.build(story)
     buf.seek(0)

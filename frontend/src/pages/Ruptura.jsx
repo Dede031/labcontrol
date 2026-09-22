@@ -186,6 +186,16 @@ export default function Ruptura() {
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {r.obra_nome} · {r.idade_real}d · {new Date(r.data_ensaio).toLocaleDateString("pt-BR")}
                   </div>
+                  <div className="text-[10px] text-slate-500 mt-1.5 space-y-0.5 border-l-2 border-slate-200 pl-2">
+                    <div>📝 Lançado por <span className="font-semibold text-slate-700">{r.created_by_nome || "-"}</span> em {new Date(r.data_ensaio).toLocaleString("pt-BR")}</div>
+                    {r.validado_em && (
+                      <div>
+                        {r.validacao_status === "Rejeitado" ? "❌" : "✅"}
+                        {" "}Validado por <span className="font-semibold text-slate-700">{r.validado_por_nome || "-"}</span> em {new Date(r.validado_em).toLocaleString("pt-BR")}
+                        {r.validacao_observacoes && <div className="italic text-slate-500">"{r.validacao_observacoes}"</div>}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
                     <Badge className={b.className}><Icon className="w-3 h-3 mr-1" /> {r.validacao_status}</Badge>
                     {canValidate && r.validacao_status === "Aguardando validação" && (

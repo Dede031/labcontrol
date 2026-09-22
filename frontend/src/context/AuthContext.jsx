@@ -32,6 +32,8 @@ export function AuthProvider({ children }) {
       role: data.role,
       company_id: data.company_id,
       company_name: data.company_name,
+      crea: data.crea,
+      telefone: data.telefone,
     });
     return data;
   };
