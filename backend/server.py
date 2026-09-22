@@ -104,6 +104,13 @@ async def require_super_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def require_tecnico(user: dict = Depends(get_current_user)) -> dict:
+    """Only tecnico (validador) or super_admin can validate ruptures."""
+    if user.get("role") not in ("tecnico", "super_admin"):
+        raise HTTPException(status_code=403, detail="Apenas o Técnico de Qualidade pode validar")
+    return user
+
+
 def clean_doc(doc):
     if doc is None:
         return None
@@ -178,10 +185,61 @@ class CPIn(BaseModel):
 
 class CPBatchIn(BaseModel):
     concreto_id: str
-    prefixo: str
     quantidade: int = 2  # 2 CPs por idade padrão
     data_moldagem: str
     idades: List[int] = [7, 28]
+    observacoes: str = ""
+
+
+class ValidarIn(BaseModel):
+    aprovado: bool
+    observacoes: str = ""
+
+
+class SoloAmostraIn(BaseModel):
+    obra_id: str
+    identificacao: str
+    local: str = ""
+    profundidade: str = ""
+    descricao: str = ""
+    data_coleta: Optional[str] = None
+    observacoes: str = ""
+
+
+class PontoPDL(BaseModel):
+    profundidade_cm: float
+    golpes: int
+
+
+class PDLIn(BaseModel):
+    amostra_id: str
+    data_ensaio: str
+    operador: str = ""
+    pontos: List[PontoPDL]
+    observacoes: str = ""
+
+
+class PontoCompactacao(BaseModel):
+    umidade: float  # %
+    densidade_seca: float  # g/cm³
+
+
+class CompactacaoIn(BaseModel):
+    amostra_id: str
+    data_ensaio: str
+    energia: Literal["Normal", "Intermediária", "Modificada"] = "Normal"
+    pontos: List[PontoCompactacao]
+    observacoes: str = ""
+
+
+class HilfIn(BaseModel):
+    amostra_id: str
+    data_ensaio: str
+    umidade_campo: float  # %
+    densidade_campo: float  # g/cm³ (aparente)
+    densidade_max_lab: float  # g/cm³ (referência do Proctor)
+    umidade_otima_lab: float  # %
+    grau_compactacao_meta: float = 100.0  # %
     observacoes: str = ""
 
 
@@ -399,11 +457,19 @@ async def create_concreto(payload: ConcretoIn, user: dict = Depends(get_current_
     obra = await db.obras.find_one(tenant_filter(user, {"id": payload.obra_id}))
     if not obra:
         raise HTTPException(404, "Obra não encontrada")
+    # Compute next série number for this obra (sequential per obra)
+    last = await db.concretos.find_one(
+        tenant_filter(user, {"obra_id": payload.obra_id}),
+        sort=[("serie_numero", -1)],
+    )
+    serie_numero = (last.get("serie_numero", 0) if last else 0) + 1
     doc = payload.model_dump()
     doc.update({
         "id": str(uuid.uuid4()),
         "company_id": user["company_id"],
         "obra_nome": obra["nome"],
+        "serie_numero": serie_numero,
+        "serie_label": f"S-{serie_numero:03d}",
         "created_at": iso(now_utc()),
         "created_by": user["id"],
     })
@@ -431,7 +497,8 @@ async def delete_concreto(concreto_id: str, user: dict = Depends(get_current_use
 # ---------------- CORPOS DE PROVA ----------------
 @api.get("/cps")
 async def list_cps(concreto_id: Optional[str] = None, obra_id: Optional[str] = None,
-                   status: Optional[str] = None, user: dict = Depends(get_current_user)):
+                   status: Optional[str] = None, vencidos_only: bool = False,
+                   user: dict = Depends(get_current_user)):
     f = tenant_filter(user)
     if concreto_id:
         f["concreto_id"] = concreto_id
@@ -439,6 +506,10 @@ async def list_cps(concreto_id: Optional[str] = None, obra_id: Optional[str] = N
         f["obra_id"] = obra_id
     if status:
         f["status"] = status
+    if vencidos_only:
+        # Only CPs with pending status AND scheduled rupture date at or before now
+        f["status"] = "Pendente"
+        f["data_prevista_ruptura"] = {"$lte": iso(now_utc())}
     items = await db.corpos_prova.find(f, {"_id": 0}).sort("data_prevista_ruptura", 1).to_list(2000)
     return items
 
@@ -449,28 +520,34 @@ async def create_cps_batch(payload: CPBatchIn, user: dict = Depends(get_current_
     if not concreto:
         raise HTTPException(404, "Concreto não encontrado")
     moldagem = datetime.fromisoformat(payload.data_moldagem.replace("Z", "+00:00"))
+    serie_label = concreto.get("serie_label", f"S-{concreto.get('serie_numero', 1):03d}")
     created = []
-    counter = 1
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    letter_idx = 0
     for idade in payload.idades:
         for _ in range(payload.quantidade):
+            letter = letters[letter_idx % len(letters)]
+            letter_idx += 1
             cp = {
                 "id": str(uuid.uuid4()),
                 "company_id": user["company_id"],
                 "obra_id": concreto["obra_id"],
                 "obra_nome": concreto.get("obra_nome", ""),
                 "concreto_id": payload.concreto_id,
-                "identificacao": f"{payload.prefixo}-{counter:03d}",
+                "serie_label": serie_label,
+                "serie_numero": concreto.get("serie_numero"),
+                "identificacao": f"{serie_label}-{letter}",
                 "data_moldagem": iso(moldagem),
                 "idade": idade,
                 "data_prevista_ruptura": iso(moldagem + timedelta(days=idade)),
                 "status": "Pendente",
                 "observacoes": payload.observacoes,
                 "fck_nominal": concreto.get("fck"),
+                "nota_fiscal": concreto.get("nota", ""),
                 "created_at": iso(now_utc()),
             }
             await db.corpos_prova.insert_one(cp)
             created.append(clean_doc(cp))
-            counter += 1
     return {"created": created, "total": len(created)}
 
 
@@ -528,11 +605,16 @@ async def create_ruptura(payload: RupturaIn, user: dict = Depends(get_current_us
     area_cm2 = area_mm2 / 100
     # Resistência (MPa) = Carga (kN) * 10 / Área (cm²)  (equivale a N/mm²)
     resistencia = round((payload.carga * 10) / area_cm2, 2) if area_cm2 > 0 else 0
+    fck_nom = cp.get("fck_nominal")
+    conforme = None
+    if fck_nom is not None:
+        conforme = bool(resistencia >= float(fck_nom))
     doc = {
         "id": str(uuid.uuid4()),
         "company_id": user["company_id"],
         "cp_id": payload.cp_id,
         "cp_identificacao": cp["identificacao"],
+        "serie_label": cp.get("serie_label"),
         "obra_id": cp["obra_id"],
         "obra_nome": cp.get("obra_nome", ""),
         "concreto_id": cp["concreto_id"],
@@ -541,18 +623,45 @@ async def create_ruptura(payload: RupturaIn, user: dict = Depends(get_current_us
         "area_cm2": round(area_cm2, 2),
         "carga_kn": payload.carga,
         "resistencia_mpa": resistencia,
-        "fck_nominal": cp.get("fck_nominal"),
+        "fck_nominal": fck_nom,
+        "conforme": conforme,
         "observacoes": payload.observacoes,
+        "validacao_status": "Aguardando validação",
+        "validado_por": None,
+        "validado_por_nome": None,
+        "validado_em": None,
+        "validacao_observacoes": "",
         "data_ensaio": iso(now_utc()),
         "created_by": user["id"],
+        "created_by_nome": user.get("name", ""),
     }
     await db.rupturas.insert_one(doc)
     await db.corpos_prova.update_one(
         {"id": payload.cp_id},
         {"$set": {"status": "Rompido", "resistencia_mpa": resistencia,
+                  "conforme": conforme,
+                  "validacao_status": "Aguardando validação",
                   "data_ensaio": doc["data_ensaio"]}}
     )
     return clean_doc(doc)
+
+
+@api.put("/rupturas/{r_id}/validar")
+async def validar_ruptura(r_id: str, payload: ValidarIn, tec: dict = Depends(require_tecnico)):
+    doc = await db.rupturas.find_one(tenant_filter(tec, {"id": r_id}))
+    if not doc:
+        raise HTTPException(404, "Ruptura não encontrada")
+    status_val = "Validado" if payload.aprovado else "Rejeitado"
+    await db.rupturas.update_one({"id": r_id}, {"$set": {
+        "validacao_status": status_val,
+        "validado_por": tec["id"],
+        "validado_por_nome": tec.get("name", ""),
+        "validado_em": iso(now_utc()),
+        "validacao_observacoes": payload.observacoes,
+    }})
+    await db.corpos_prova.update_one({"id": doc["cp_id"]},
+                                     {"$set": {"validacao_status": status_val}})
+    return {"message": "Validação registrada", "status": status_val}
 
 
 @api.delete("/rupturas/{r_id}")
@@ -615,6 +724,202 @@ async def update_equipamento(eq_id: str, payload: EquipamentoIn, user: dict = De
 @api.delete("/equipamentos/{eq_id}")
 async def delete_equipamento(eq_id: str, user: dict = Depends(get_current_user)):
     r = await db.equipamentos.delete_one(tenant_filter(user, {"id": eq_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Não encontrado")
+    return {"message": "Removido"}
+
+
+# ---------------- SOLOS: amostras e ensaios ----------------
+@api.get("/solos/amostras")
+async def list_amostras(obra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if obra_id:
+        f["obra_id"] = obra_id
+    items = await db.amostras_solo.find(f, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+@api.post("/solos/amostras")
+async def create_amostra(payload: SoloAmostraIn, user: dict = Depends(get_current_user)):
+    obra = await db.obras.find_one(tenant_filter(user, {"id": payload.obra_id}))
+    if not obra:
+        raise HTTPException(404, "Obra não encontrada")
+    doc = payload.model_dump()
+    doc.update({
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "obra_nome": obra["nome"],
+        "created_at": iso(now_utc()),
+    })
+    await db.amostras_solo.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/amostras/{a_id}")
+async def delete_amostra(a_id: str, user: dict = Depends(get_current_user)):
+    await db.ensaios_pdl.delete_many(tenant_filter(user, {"amostra_id": a_id}))
+    await db.ensaios_compactacao.delete_many(tenant_filter(user, {"amostra_id": a_id}))
+    await db.ensaios_hilf.delete_many(tenant_filter(user, {"amostra_id": a_id}))
+    r = await db.amostras_solo.delete_one(tenant_filter(user, {"id": a_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Amostra não encontrada")
+    return {"message": "Removida"}
+
+
+@api.get("/solos/pdl")
+async def list_pdl(amostra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if amostra_id:
+        f["amostra_id"] = amostra_id
+    items = await db.ensaios_pdl.find(f, {"_id": 0}).sort("data_ensaio", -1).to_list(500)
+    return items
+
+
+@api.post("/solos/pdl")
+async def create_pdl(payload: PDLIn, user: dict = Depends(get_current_user)):
+    amostra = await db.amostras_solo.find_one(tenant_filter(user, {"id": payload.amostra_id}))
+    if not amostra:
+        raise HTTPException(404, "Amostra não encontrada")
+    pontos = [p.model_dump() for p in payload.pontos]
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "amostra_id": payload.amostra_id,
+        "obra_id": amostra["obra_id"],
+        "obra_nome": amostra.get("obra_nome", ""),
+        "amostra_identificacao": amostra["identificacao"],
+        "data_ensaio": payload.data_ensaio,
+        "operador": payload.operador,
+        "pontos": pontos,
+        "observacoes": payload.observacoes,
+        "created_at": iso(now_utc()),
+    }
+    await db.ensaios_pdl.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/pdl/{e_id}")
+async def delete_pdl(e_id: str, user: dict = Depends(get_current_user)):
+    r = await db.ensaios_pdl.delete_one(tenant_filter(user, {"id": e_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Não encontrado")
+    return {"message": "Removido"}
+
+
+@api.get("/solos/compactacao")
+async def list_compactacao(amostra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if amostra_id:
+        f["amostra_id"] = amostra_id
+    items = await db.ensaios_compactacao.find(f, {"_id": 0}).sort("data_ensaio", -1).to_list(500)
+    return items
+
+
+@api.post("/solos/compactacao")
+async def create_compactacao(payload: CompactacaoIn, user: dict = Depends(get_current_user)):
+    amostra = await db.amostras_solo.find_one(tenant_filter(user, {"id": payload.amostra_id}))
+    if not amostra:
+        raise HTTPException(404, "Amostra não encontrada")
+    pts = [p.model_dump() for p in payload.pontos]
+    # Calcular curva: parabola ajustada aos 3 pontos centrais (maior densidade)
+    umidade_otima = None
+    densidade_max = None
+    if len(pts) >= 3:
+        # Ordenar por umidade
+        sorted_pts = sorted(pts, key=lambda p: p["umidade"])
+        # Fit parabola y = a*x² + b*x + c using numpy
+        try:
+            import numpy as np
+            xs = np.array([p["umidade"] for p in sorted_pts])
+            ys = np.array([p["densidade_seca"] for p in sorted_pts])
+            coeffs = np.polyfit(xs, ys, 2)  # a, b, c
+            a, b, c = coeffs
+            if a < 0:  # parabola down (real)
+                umidade_otima = round(float(-b / (2 * a)), 2)
+                densidade_max = round(float(a * umidade_otima**2 + b * umidade_otima + c), 3)
+            else:
+                # fallback: max point
+                idx = int(ys.argmax())
+                umidade_otima = round(float(xs[idx]), 2)
+                densidade_max = round(float(ys[idx]), 3)
+        except Exception:
+            idx = max(range(len(pts)), key=lambda i: pts[i]["densidade_seca"])
+            umidade_otima = round(pts[idx]["umidade"], 2)
+            densidade_max = round(pts[idx]["densidade_seca"], 3)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "amostra_id": payload.amostra_id,
+        "obra_id": amostra["obra_id"],
+        "obra_nome": amostra.get("obra_nome", ""),
+        "amostra_identificacao": amostra["identificacao"],
+        "data_ensaio": payload.data_ensaio,
+        "energia": payload.energia,
+        "pontos": pts,
+        "umidade_otima": umidade_otima,
+        "densidade_max": densidade_max,
+        "observacoes": payload.observacoes,
+        "created_at": iso(now_utc()),
+    }
+    await db.ensaios_compactacao.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/compactacao/{e_id}")
+async def delete_compactacao(e_id: str, user: dict = Depends(get_current_user)):
+    r = await db.ensaios_compactacao.delete_one(tenant_filter(user, {"id": e_id}))
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Não encontrado")
+    return {"message": "Removido"}
+
+
+@api.get("/solos/hilf")
+async def list_hilf(amostra_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+    f = tenant_filter(user)
+    if amostra_id:
+        f["amostra_id"] = amostra_id
+    items = await db.ensaios_hilf.find(f, {"_id": 0}).sort("data_ensaio", -1).to_list(500)
+    return items
+
+
+@api.post("/solos/hilf")
+async def create_hilf(payload: HilfIn, user: dict = Depends(get_current_user)):
+    amostra = await db.amostras_solo.find_one(tenant_filter(user, {"id": payload.amostra_id}))
+    if not amostra:
+        raise HTTPException(404, "Amostra não encontrada")
+    # Grau de compactação (GC) = densidade_seca_campo / densidade_max_lab * 100
+    # Aproxima densidade seca de campo: rho_seca = rho_aparente / (1 + w/100)
+    d_seca_campo = payload.densidade_campo / (1 + payload.umidade_campo / 100)
+    gc = (d_seca_campo / payload.densidade_max_lab) * 100 if payload.densidade_max_lab > 0 else 0
+    desvio_umidade = payload.umidade_campo - payload.umidade_otima_lab
+    conforme = gc >= payload.grau_compactacao_meta
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": user["company_id"],
+        "amostra_id": payload.amostra_id,
+        "obra_id": amostra["obra_id"],
+        "obra_nome": amostra.get("obra_nome", ""),
+        "amostra_identificacao": amostra["identificacao"],
+        "data_ensaio": payload.data_ensaio,
+        "umidade_campo": payload.umidade_campo,
+        "densidade_campo": payload.densidade_campo,
+        "densidade_seca_campo": round(d_seca_campo, 3),
+        "densidade_max_lab": payload.densidade_max_lab,
+        "umidade_otima_lab": payload.umidade_otima_lab,
+        "grau_compactacao_meta": payload.grau_compactacao_meta,
+        "grau_compactacao": round(gc, 2),
+        "desvio_umidade": round(desvio_umidade, 2),
+        "conforme": conforme,
+        "observacoes": payload.observacoes,
+        "created_at": iso(now_utc()),
+    }
+    await db.ensaios_hilf.insert_one(doc)
+    return clean_doc(doc)
+
+
+@api.delete("/solos/hilf/{e_id}")
+async def delete_hilf(e_id: str, user: dict = Depends(get_current_user)):
+    r = await db.ensaios_hilf.delete_one(tenant_filter(user, {"id": e_id}))
     if r.deleted_count == 0:
         raise HTTPException(404, "Não encontrado")
     return {"message": "Removido"}
@@ -706,26 +1011,39 @@ async def relatorio_obra_pdf(obra_id: str, user: dict = Depends(get_current_user
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Corpos de Prova e Resultados", h2))
-    tdata = [["CP", "Idade", "Data Moldagem", "Data Ruptura", "Diâm.(mm)", "Área(cm²)", "Carga(kN)", "MPa", "FCK Nom."]]
+    tdata = [["CP", "Série", "Idade", "Moldagem", "Ruptura", "Diâm.(mm)", "Área(cm²)", "Carga(kN)", "MPa", "FCK", "Situação"]]
     for cp in sorted(cps, key=lambda x: x.get("identificacao","")):
         r = rupt_by_cp.get(cp["id"])
         molda = cp["data_moldagem"][:10] if cp.get("data_moldagem") else "-"
         prev = cp["data_prevista_ruptura"][:10] if cp.get("data_prevista_ruptura") else "-"
+        serie = cp.get("serie_label") or "-"
         if r:
-            tdata.append([cp["identificacao"], f"{r['idade_real']}d", molda, r["data_ensaio"][:10],
+            situacao = "Conforme" if r.get("conforme") else "Não conforme"
+            if r.get("validacao_status") == "Rejeitado":
+                situacao = "Rejeitado"
+            tdata.append([cp["identificacao"], serie, f"{r['idade_real']}d", molda, r["data_ensaio"][:10],
                           f"{r['diametro']:.0f}", f"{r['area_cm2']:.2f}", f"{r['carga_kn']:.1f}",
-                          f"{r['resistencia_mpa']:.2f}", f"{cp.get('fck_nominal','-')}"])
+                          f"{r['resistencia_mpa']:.2f}", f"{cp.get('fck_nominal','-')}", situacao])
         else:
-            tdata.append([cp["identificacao"], f"{cp['idade']}d", molda, prev, "-", "-", "-", "Pendente", f"{cp.get('fck_nominal','-')}"])
-    t = Table(tdata, colWidths=[2*cm, 1.3*cm, 2.3*cm, 2.3*cm, 1.6*cm, 1.6*cm, 1.6*cm, 1.5*cm, 1.7*cm])
-    t.setStyle(TableStyle([
+            tdata.append([cp["identificacao"], serie, f"{cp['idade']}d", molda, prev,
+                          "-", "-", "-", "Pendente", f"{cp.get('fck_nominal','-')}", "-"])
+    t = Table(tdata, colWidths=[1.8*cm, 1.3*cm, 1.1*cm, 1.9*cm, 1.9*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.3*cm, 1.1*cm, 1.9*cm])
+    ts = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), rl_colors.HexColor("#0f172a")),
         ('TEXTCOLOR', (0,0), (-1,0), rl_colors.white),
-        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('FONTSIZE', (0,0), (-1,-1), 7.5),
         ('GRID', (0,0), (-1,-1), 0.25, rl_colors.HexColor("#cbd5e1")),
         ('ALIGN', (1,1), (-1,-1), 'CENTER'),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [rl_colors.white, rl_colors.HexColor("#f8fafc")]),
-    ]))
+    ])
+    # Colorir coluna "Situação"
+    for i, row in enumerate(tdata[1:], start=1):
+        sit = row[-1]
+        if sit == "Conforme":
+            ts.add('TEXTCOLOR', (-1, i), (-1, i), rl_colors.HexColor("#166534"))
+        elif sit in ("Não conforme", "Rejeitado"):
+            ts.add('TEXTCOLOR', (-1, i), (-1, i), rl_colors.HexColor("#b91c1c"))
+    t.setStyle(ts)
     story.append(t)
 
     story.append(Spacer(1, 12))
@@ -756,6 +1074,26 @@ async def seed_data():
     await db.corpos_prova.create_index([("company_id", 1), ("concreto_id", 1)])
     await db.rupturas.create_index([("company_id", 1), ("cp_id", 1)])
     await db.equipamentos.create_index([("company_id", 1)])
+
+    # Migration: backfill serie_label for existing concretos and CPs
+    async for c in db.concretos.find({"$or": [{"serie_label": {"$exists": False}}, {"serie_label": None}]}):
+        prev = await db.concretos.count_documents({
+            "obra_id": c["obra_id"], "company_id": c["company_id"],
+            "created_at": {"$lt": c.get("created_at", "")}
+        })
+        serie_num = prev + 1
+        await db.concretos.update_one({"id": c["id"]}, {"$set": {
+            "serie_numero": serie_num,
+            "serie_label": f"S-{serie_num:03d}",
+        }})
+    async for cp in db.corpos_prova.find({"$or": [{"serie_label": {"$exists": False}}, {"serie_label": None}]}):
+        concreto = await db.concretos.find_one({"id": cp["concreto_id"]})
+        if concreto and concreto.get("serie_label"):
+            await db.corpos_prova.update_one({"id": cp["id"]}, {"$set": {
+                "serie_label": concreto["serie_label"],
+                "serie_numero": concreto.get("serie_numero"),
+                "nota_fiscal": concreto.get("nota", ""),
+            }})
 
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@labcontrol.com").lower()
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -793,7 +1131,7 @@ async def seed_data():
             await db.users.update_one({"email": admin_email},
                                       {"$set": {"company_id": demo_company["id"], "role": "super_admin"}})
 
-    # Demo user (technician)
+    # Demo user (laboratorista - lança ensaios)
     tech_email = "tecnico@labcontrol.com"
     if not await db.users.find_one({"email": tech_email}):
         await db.users.insert_one({
@@ -802,6 +1140,20 @@ async def seed_data():
             "password_hash": hash_password("tecnico123"),
             "name": "João Silva",
             "role": "tecnico",
+            "company_id": demo_company["id"],
+            "token_version": 0,
+            "created_at": iso(now_utc()),
+        })
+
+    # Laboratorista (lança ensaios, não pode validar)
+    lab_email = "laboratorista@labcontrol.com"
+    if not await db.users.find_one({"email": lab_email}):
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "email": lab_email,
+            "password_hash": hash_password("lab123"),
+            "name": "Carlos Souza",
+            "role": "laboratorista",
             "company_id": demo_company["id"],
             "token_version": 0,
             "created_at": iso(now_utc()),
@@ -821,32 +1173,36 @@ async def seed_data():
              "responsavel": "Eng. Ana Ferreira", "status": "Ativa", "observacoes": "",
              "created_at": iso(now_utc()), "created_by": ""},
         ])
-        # Concreto para obra1
+        # Concreto para obra1 - com série 001
         moldagem = now_utc() - timedelta(days=5)
         concreto_id = str(uuid.uuid4())
         await db.concretos.insert_one({
             "id": concreto_id, "company_id": demo_company["id"], "obra_id": obra1_id,
             "obra_nome": "Residencial Jardim das Acácias",
-            "data_hora": iso(moldagem), "fornecedor": "Cimento Votorantim", "nota": "4587",
+            "data_hora": iso(moldagem), "fornecedor": "Cimento Votorantim", "nota": "NF-4587",
             "fck": 30.0, "volume": 8.0, "elemento": "Pilar P12", "slump": 120.0,
             "observacoes": "Concreto bombeado - Traço 1:2:3",
+            "serie_numero": 1, "serie_label": "S-001",
             "created_at": iso(now_utc()), "created_by": "",
         })
-        # 4 CPs (2 x 7d, 2 x 28d)
-        counter = 1
+        # 4 CPs com identificação S-001-A/B/C/D (2 x 7d, 2 x 28d)
+        letters = "ABCD"
+        li = 0
         for idade in [7, 28]:
             for _ in range(2):
                 await db.corpos_prova.insert_one({
                     "id": str(uuid.uuid4()), "company_id": demo_company["id"],
                     "obra_id": obra1_id, "obra_nome": "Residencial Jardim das Acácias",
                     "concreto_id": concreto_id,
-                    "identificacao": f"CP-{counter:03d}",
+                    "serie_label": "S-001", "serie_numero": 1,
+                    "identificacao": f"S-001-{letters[li]}",
                     "data_moldagem": iso(moldagem), "idade": idade,
                     "data_prevista_ruptura": iso(moldagem + timedelta(days=idade)),
                     "status": "Pendente", "observacoes": "", "fck_nominal": 30.0,
+                    "nota_fiscal": "NF-4587",
                     "created_at": iso(now_utc()),
                 })
-                counter += 1
+                li += 1
         # Equipamentos
         await db.equipamentos.insert_many([
             {"id": str(uuid.uuid4()), "company_id": demo_company["id"], "nome": "Prensa Hidráulica 2000kN",
@@ -881,10 +1237,16 @@ async def seed_data():
 - Role: super_admin
 - Can create companies via POST /api/companies
 
-## Demo Technician
+## Técnico de Qualidade (valida rupturas)
 - Email: `tecnico@labcontrol.com`
 - Password: `tecnico123`
 - Role: tecnico
+- Company: LabControl Demo
+
+## Laboratorista (lança ensaios, NÃO valida)
+- Email: `laboratorista@labcontrol.com`
+- Password: `lab123`
+- Role: laboratorista
 - Company: LabControl Demo
 
 ## Auth Endpoints
@@ -893,6 +1255,7 @@ async def seed_data():
 - GET /api/auth/me
 - POST /api/auth/forgot-password
 - POST /api/auth/reset-password
+- PUT /api/rupturas/{{id}}/validar (tecnico only)
 """)
     except Exception as e:
         logger.warning(f"Could not write test credentials: {e}")

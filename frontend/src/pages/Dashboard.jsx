@@ -58,7 +58,7 @@ export default function Dashboard() {
         <KpiCard label="Obras ativas" value={k.obras_ativas ?? 0} icon={Building2} styleKey="obras" link="/obras" />
         <KpiCard label="Ensaios realizados" value={k.ensaios_realizados ?? 0} icon={CheckCircle2} styleKey="ensaios" link="/ruptura" />
         <KpiCard label="CPs aguardando ruptura" value={k.cps_aguardando_ruptura ?? 0} icon={Clock} styleKey="cps" link="/corpos-de-prova" />
-        <KpiCard label="Resultados pendentes" value={k.resultados_pendentes ?? 0} icon={AlertTriangle} styleKey="pendentes" link="/ruptura" />
+        <KpiCard label="Resultados pendentes" value={k.resultados_pendentes ?? 0} icon={AlertTriangle} styleKey="pendentes" link="/corpos-de-prova?vencidos=1" />
         <KpiCard label="Calibrações próximas" value={k.calibracoes_proximas ?? 0} icon={Wrench} styleKey="calib" link="/equipamentos" />
       </div>
 

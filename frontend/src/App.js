@@ -14,6 +14,7 @@ import Ruptura from "@/pages/Ruptura";
 import Equipamentos from "@/pages/Equipamentos";
 import Relatorios from "@/pages/Relatorios";
 import Configuracoes from "@/pages/Configuracoes";
+import Solos from "@/pages/Solos";
 
 function ProtectedRoute({ children }) {
   const { user, checking } = useAuth();
@@ -52,6 +53,7 @@ function App() {
               <Route path="concreto" element={<Concreto />} />
               <Route path="corpos-de-prova" element={<CorposDeProva />} />
               <Route path="ruptura" element={<Ruptura />} />
+              <Route path="solos" element={<Solos />} />
               <Route path="equipamentos" element={<Equipamentos />} />
               <Route path="relatorios" element={<Relatorios />} />
               <Route path="configuracoes" element={<Configuracoes />} />

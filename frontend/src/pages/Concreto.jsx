@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, FlaskConical } from "lucide-react";
+import { Plus, Trash2, FlaskConical, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { CONCRETO, CP } from "@/constants/testIds";
 
@@ -29,10 +30,9 @@ export default function Concreto() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
 
-  // CP batch modal state
   const [cpOpen, setCpOpen] = useState(false);
   const [cpConcreto, setCpConcreto] = useState(null);
-  const [cpForm, setCpForm] = useState({ prefixo: "CP", quantidade: 2, idades: "7,28", observacoes: "" });
+  const [cpForm, setCpForm] = useState({ quantidade: 2, idades: "7,28", observacoes: "" });
 
   const load = async () => {
     const [c, o] = await Promise.all([api.get("/concretos"), api.get("/obras")]);
@@ -45,13 +45,12 @@ export default function Concreto() {
     try {
       const payload = { ...form, data_hora: new Date(form.data_hora).toISOString() };
       const { data } = await api.post("/concretos", payload);
-      toast.success("Concreto registrado");
+      toast.success(`Concreto registrado - Série ${data.serie_label}`);
       setOpen(false);
       setForm(EMPTY);
       load();
-      // Open CP batch dialog directly
       setCpConcreto(data);
-      setCpForm({ prefixo: `CP-${(new Date(payload.data_hora)).toISOString().slice(2,10).replace(/-/g,'')}`, quantidade: 2, idades: "7,28", observacoes: "" });
+      setCpForm({ quantidade: 2, idades: "7,28", observacoes: "" });
       setCpOpen(true);
     } catch { toast.error("Erro ao salvar"); }
   };
@@ -68,13 +67,12 @@ export default function Concreto() {
       const idades = cpForm.idades.split(",").map((s) => parseInt(s.trim())).filter(Boolean);
       await api.post("/cps/batch", {
         concreto_id: cpConcreto.id,
-        prefixo: cpForm.prefixo,
         quantidade: parseInt(cpForm.quantidade) || 2,
         data_moldagem: cpConcreto.data_hora,
         idades,
         observacoes: cpForm.observacoes,
       });
-      toast.success("Corpos de prova gerados");
+      toast.success(`Corpos de prova ${cpConcreto.serie_label} gerados`);
       setCpOpen(false);
     } catch { toast.error("Erro ao gerar CPs"); }
   };
@@ -84,7 +82,7 @@ export default function Concreto() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">Controle de Concreto</h1>
-          <p className="text-sm text-slate-500">Registre recebimentos e gere corpos de prova</p>
+          <p className="text-sm text-slate-500">Cada recebimento é uma nova <strong>Série</strong> sequencial da obra</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -95,7 +93,7 @@ export default function Concreto() {
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Novo recebimento de concreto</DialogTitle>
-              <DialogDescription>Registre o concreto recebido e siga para a moldagem dos CPs.</DialogDescription>
+              <DialogDescription>A série (S-XXX) é gerada automaticamente por obra. Nota fiscal fica ao lado.</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
@@ -112,20 +110,20 @@ export default function Concreto() {
                 <Input type="datetime-local" value={form.data_hora} onChange={(e) => setForm({ ...form, data_hora: e.target.value })} className="mt-1.5" />
               </div>
               <div>
+                <Label className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-sky-600" /> Nota fiscal / Documento</Label>
+                <Input value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} placeholder="NF-0000" className="mt-1.5 font-mono" />
+              </div>
+              <div>
                 <Label>Fornecedor</Label>
                 <Input value={form.fornecedor} onChange={(e) => setForm({ ...form, fornecedor: e.target.value })} className="mt-1.5" />
               </div>
               <div>
-                <Label>Nota / Documento</Label>
-                <Input value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} className="mt-1.5" />
-              </div>
-              <div>
                 <Label>FCK especificado (MPa)</Label>
-                <Input type="number" step="0.1" value={form.fck} onChange={(e) => setForm({ ...form, fck: parseFloat(e.target.value) })} className="mt-1.5" />
+                <Input type="number" step="0.1" value={form.fck} onChange={(e) => setForm({ ...form, fck: parseFloat(e.target.value) })} className="mt-1.5 font-mono" />
               </div>
               <div>
                 <Label>Volume (m³)</Label>
-                <Input type="number" step="0.1" value={form.volume} onChange={(e) => setForm({ ...form, volume: parseFloat(e.target.value) })} className="mt-1.5" />
+                <Input type="number" step="0.1" value={form.volume} onChange={(e) => setForm({ ...form, volume: parseFloat(e.target.value) })} className="mt-1.5 font-mono" />
               </div>
               <div>
                 <Label>Elemento concretado</Label>
@@ -133,7 +131,7 @@ export default function Concreto() {
               </div>
               <div className="sm:col-span-2">
                 <Label>Slump / Abatimento (mm)</Label>
-                <Input type="number" value={form.slump} onChange={(e) => setForm({ ...form, slump: parseFloat(e.target.value) })} className="mt-1.5" />
+                <Input type="number" value={form.slump} onChange={(e) => setForm({ ...form, slump: parseFloat(e.target.value) })} className="mt-1.5 font-mono" />
               </div>
               <div className="sm:col-span-2">
                 <Label>Observações</Label>
@@ -153,9 +151,11 @@ export default function Concreto() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Série</TableHead>
               <TableHead>Obra</TableHead>
               <TableHead>Data</TableHead>
               <TableHead>Fornecedor</TableHead>
+              <TableHead>Nota fiscal</TableHead>
               <TableHead>FCK</TableHead>
               <TableHead>Volume</TableHead>
               <TableHead>Elemento</TableHead>
@@ -165,15 +165,17 @@ export default function Concreto() {
           <TableBody>
             {items.map((c) => (
               <TableRow key={c.id} data-testid={CONCRETO.row(c.id)}>
+                <TableCell><Badge className="bg-sky-100 text-sky-800 hover:bg-sky-100 font-mono">{c.serie_label || "-"}</Badge></TableCell>
                 <TableCell className="font-medium">{c.obra_nome}</TableCell>
                 <TableCell className="text-xs font-mono">{new Date(c.data_hora).toLocaleString("pt-BR")}</TableCell>
                 <TableCell>{c.fornecedor}</TableCell>
+                <TableCell className="font-mono text-xs">{c.nota || "-"}</TableCell>
                 <TableCell className="font-mono">{c.fck} MPa</TableCell>
                 <TableCell className="font-mono">{c.volume} m³</TableCell>
                 <TableCell>{c.elemento}</TableCell>
                 <TableCell className="text-right">
-                  <Button data-testid={CONCRETO.addCP(c.id)} variant="outline" size="sm" onClick={() => { setCpConcreto(c); setCpForm({ prefixo: "CP", quantidade: 2, idades: "7,28", observacoes: "" }); setCpOpen(true); }}>
-                    <FlaskConical className="w-4 h-4 mr-1" /> Adicionar CPs
+                  <Button data-testid={CONCRETO.addCP(c.id)} variant="outline" size="sm" onClick={() => { setCpConcreto(c); setCpForm({ quantidade: 2, idades: "7,28", observacoes: "" }); setCpOpen(true); }}>
+                    <FlaskConical className="w-4 h-4 mr-1" /> CPs
                   </Button>
                   <Button variant="ghost" size="icon" onClick={() => del(c.id)}>
                     <Trash2 className="w-4 h-4 text-red-600" />
@@ -182,36 +184,33 @@ export default function Concreto() {
               </TableRow>
             ))}
             {items.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center text-slate-400 py-8">Nenhum recebimento registrado</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-slate-400 py-8">Nenhum recebimento registrado</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
         </div>
       </Card>
 
-      {/* Batch CP dialog */}
       <Dialog open={cpOpen} onOpenChange={setCpOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Moldagem de corpos de prova</DialogTitle>
-            <DialogDescription>Defina prefixo, quantidade e idades para gerar os CPs automaticamente.</DialogDescription>
+            <DialogTitle>Moldagem — {cpConcreto?.serie_label}</DialogTitle>
+            <DialogDescription>
+              Concreto: {cpConcreto?.obra_nome} — FCK {cpConcreto?.fck} MPa — NF {cpConcreto?.nota || "-"}
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-slate-500 -mt-2">
-            Concreto: {cpConcreto?.obra_nome} — FCK {cpConcreto?.fck} MPa
-          </p>
           <div className="space-y-4 pt-2">
-            <div>
-              <Label>Prefixo da identificação</Label>
-              <Input value={cpForm.prefixo} onChange={(e) => setCpForm({ ...cpForm, prefixo: e.target.value })} className="mt-1.5" />
+            <div className="p-3 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-900">
+              CPs serão identificados como <span className="font-mono font-semibold">{cpConcreto?.serie_label}-A, -B, -C...</span> automaticamente.
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Quantidade por idade</Label>
-                <Input type="number" min={1} value={cpForm.quantidade} onChange={(e) => setCpForm({ ...cpForm, quantidade: e.target.value })} className="mt-1.5" />
+                <Input type="number" min={1} value={cpForm.quantidade} onChange={(e) => setCpForm({ ...cpForm, quantidade: e.target.value })} className="mt-1.5 font-mono" />
               </div>
               <div>
                 <Label>Idades (dias)</Label>
-                <Input value={cpForm.idades} onChange={(e) => setCpForm({ ...cpForm, idades: e.target.value })} placeholder="7,28" className="mt-1.5" />
+                <Input value={cpForm.idades} onChange={(e) => setCpForm({ ...cpForm, idades: e.target.value })} placeholder="7,28" className="mt-1.5 font-mono" />
               </div>
             </div>
             <div>

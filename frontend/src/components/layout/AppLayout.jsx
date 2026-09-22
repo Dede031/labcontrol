@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   FlaskConical,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +34,7 @@ const modules = [
   { id: "concreto", label: "Concreto", icon: Truck, path: "/concreto" },
   { id: "cps", label: "Corpos de Prova", icon: Cylinder, path: "/corpos-de-prova" },
   { id: "ruptura", label: "Ruptura", icon: Gauge, path: "/ruptura" },
+  { id: "solos", label: "Solos", icon: Layers, path: "/solos" },
   { id: "equipamentos", label: "Equipamentos", icon: Wrench, path: "/equipamentos" },
   { id: "relatorios", label: "Relatórios", icon: FileSpreadsheet, path: "/relatorios" },
   { id: "configuracoes", label: "Configurações", icon: Settings, path: "/configuracoes" },
