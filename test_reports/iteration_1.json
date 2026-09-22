@@ -1,0 +1,30 @@
+{
+  "summary": "First-finish smoke tests for LabControl V1 (SaaS controle tecnológico). All critical backend endpoints and core frontend flows passed. Login, dashboard KPIs, obras/concreto/CPs batch/ruptura chain, equipamentos com _status_calc, PDF de relatório, RBAC de companies, forgot-password com _debug_token, e cálculo MPa live no frontend — todos funcionais.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/login (edesioalexandre13@gmail.com/admin123) → 200 + access_token + role super_admin + company LabControl Demo",
+    "GET /api/auth/me com Bearer → retorna usuário",
+    "POST /api/auth/forgot-password → generic message + _debug_token presente (mock e-mail confirmado)",
+    "GET /api/dashboard → kpis com 5 chaves esperadas (obras_ativas=2, ensaios_realizados=1, cps_aguardando_ruptura=16, resultados_pendentes=4, calibracoes_proximas=2), obras_recentes(2) e proximos_vencimentos(3)",
+    "CRUD /api/obras (POST 200, DELETE 200) scoped por company_id",
+    "POST /api/concretos com obra válida → retorna doc com obra_nome preenchido",
+    "POST /api/cps/batch (prefixo=CP-T1, quantidade=2, idades=[7,28]) → total=4 CPs; data_prevista_ruptura correta (moldagem 2026-01-15 → 7d=2026-01-22, 28d=2026-02-12)",
+    "POST /api/rupturas (diametro=100mm, carga=225.34kN) → area_cm2=78.54, resistencia_mpa=28.69 (fórmula MPa=(carga*10)/area confirmada); CP passa para status 'Rompido'",
+    "GET /api/equipamentos → 3 itens com _status_calc ('Vencido') e _dias_para_calibracao (-15) computados",
+    "GET /api/relatorios/obra/{id} → HTTP 200, Content-Type application/pdf, 2594 bytes",
+    "RBAC: POST /api/companies como tecnico → 403 (super_admin only)",
+    "Frontend login redireciona para /dashboard; toast 'Bem-vindo!'",
+    "Frontend dashboard renderiza 5 KPIs com valores reais do seed + obras recentes + próximos vencimentos",
+    "Frontend /ruptura: campos diametro/carga com cálculo live MPa (28.69) e área (78.54) exibidos em tempo real",
+    "Frontend /obras: botão 'Nova obra' abre modal com botão salvar (obras-save-btn presente)"
+  ],
+  "failed": [],
+  "action_items": [
+    "LOW: React console warning — 'Cannot update a component while rendering a different component' (setState-in-render) detectada no dashboard. Não bloqueia mas deve ser investigada antes do full-QA.",
+    "LOW: DialogContent sem 'Description' ou aria-describedby (warning de acessibilidade Radix). Adicionar DialogDescription nos modais."
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "Mock confirmado: /api/auth/forgot-password retorna _debug_token no body (e-mail SIMULADO conforme PRD). Reset-password flow não foi exercitado end-to-end (token_version increment) — deferido para full QA. Multi-tenancy foi verificada apenas por escopo (company_id no seed) — criação de nova empresa + login cross-tenant deferida ao full QA."
+}

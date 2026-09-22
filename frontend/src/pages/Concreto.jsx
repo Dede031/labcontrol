@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, FlaskConical } from "lucide-react";
@@ -93,7 +93,10 @@ export default function Concreto() {
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl">
-            <DialogHeader><DialogTitle>Novo recebimento de concreto</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Novo recebimento de concreto</DialogTitle>
+              <DialogDescription>Registre o concreto recebido e siga para a moldagem dos CPs.</DialogDescription>
+            </DialogHeader>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <Label>Obra</Label>
@@ -189,7 +192,10 @@ export default function Concreto() {
       {/* Batch CP dialog */}
       <Dialog open={cpOpen} onOpenChange={setCpOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Moldagem de corpos de prova</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Moldagem de corpos de prova</DialogTitle>
+            <DialogDescription>Defina prefixo, quantidade e idades para gerar os CPs automaticamente.</DialogDescription>
+          </DialogHeader>
           <p className="text-sm text-slate-500 -mt-2">
             Concreto: {cpConcreto?.obra_nome} — FCK {cpConcreto?.fck} MPa
           </p>

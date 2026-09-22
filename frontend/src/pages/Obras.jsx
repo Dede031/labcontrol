@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -102,6 +103,7 @@ export default function Obras() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editing ? "Editar obra" : "Nova obra"}</DialogTitle>
+              <DialogDescription>Preencha os dados da obra e clique em salvar.</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">

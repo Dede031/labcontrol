@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Plus, Building2 } from "lucide-react";
@@ -62,7 +62,10 @@ export default function Configuracoes() {
                 <Button className="bg-sky-600 hover:bg-sky-700"><Plus className="w-4 h-4 mr-2" /> Nova empresa</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Nova empresa</DialogTitle></DialogHeader>
+                <DialogHeader>
+                  <DialogTitle>Nova empresa</DialogTitle>
+                  <DialogDescription>Crie uma empresa e o usuário administrador dela.</DialogDescription>
+                </DialogHeader>
                 <div className="space-y-3">
                   <div><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5" /></div>
                   <div><Label>CNPJ</Label><Input value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} className="mt-1.5" /></div>
