@@ -177,6 +177,33 @@ function PDLPanel({ amostras, ensaios, reload }) {
                 <Button variant="ghost" size="icon" onClick={() => del(e.id)}><Trash2 className="w-4 h-4 text-red-600" /></Button>
               </div>
             </div>
+            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    <TableHead className="w-16">Ponto</TableHead>
+                    <TableHead>Profundidade (cm)</TableHead>
+                    <TableHead>Nº de golpes</TableHead>
+                    <TableHead>Penetração média (cm/golpe)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(e.pontos || []).map((p, index) => (
+                    <TableRow key={`${e.id}-pdl-${index}`}>
+                      <TableCell className="font-mono text-slate-500">{index + 1}</TableCell>
+                      <TableCell className="font-mono">{Number(p.profundidade_cm || 0).toFixed(1)}</TableCell>
+                      <TableCell className="font-mono font-semibold">{Number(p.golpes || 0).toFixed(0)}</TableCell>
+                      <TableCell className="font-mono text-sky-700">
+                        {Number(p.golpes) > 0 ? (Number(p.profundidade_cm || 0) / Number(p.golpes)).toFixed(2) : "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!e.pontos || e.pontos.length === 0) && (
+                    <TableRow><TableCell colSpan={4} className="py-5 text-center text-slate-400">Nenhum ponto registrado</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
             {expanded === e.id && (
               <div className="mt-3 h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -281,6 +308,36 @@ function CompactacaoPanel({ amostras, ensaios, reload }) {
                   <Button variant="outline" size="sm" onClick={() => setExpanded(expanded === e.id ? null : e.id)}>{expanded === e.id ? "Ocultar" : "Ver curva"}</Button>
                   <Button variant="ghost" size="icon" onClick={() => del(e.id)}><Trash2 className="w-4 h-4 text-red-600" /></Button>
                 </div>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 hover:bg-slate-50">
+                      <TableHead className="w-16">Ponto</TableHead>
+                      <TableHead>Umidade (%)</TableHead>
+                      <TableHead>Densidade seca (g/cm³)</TableHead>
+                      <TableHead>Situação</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sorted.map((p, index) => {
+                      const isMaximum = Number(p.densidade_seca) === Number(e.densidade_max);
+                      return (
+                        <TableRow key={`${e.id}-compactacao-${index}`} className={isMaximum ? "bg-sky-50/70" : ""}>
+                          <TableCell className="font-mono text-slate-500">{index + 1}</TableCell>
+                          <TableCell className="font-mono">{Number(p.umidade || 0).toFixed(1)}</TableCell>
+                          <TableCell className="font-mono font-semibold">{Number(p.densidade_seca || 0).toFixed(2)}</TableCell>
+                          <TableCell>
+                            {isMaximum ? <Badge className="bg-sky-100 text-sky-800 hover:bg-sky-100">Maior densidade</Badge> : <span className="text-xs text-slate-400">-</span>}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {sorted.length === 0 && (
+                      <TableRow><TableCell colSpan={4} className="py-5 text-center text-slate-400">Nenhum ponto registrado</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
               {expanded === e.id && (
                 <div className="mt-3 h-72">
